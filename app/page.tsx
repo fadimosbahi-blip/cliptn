@@ -1,5 +1,6 @@
 
 import Link from "next/link";
+import Image from "next/image";
 
 const campaigns = [
   {
@@ -206,14 +207,20 @@ export default function Home() {
       {/* Navigation */}
       <header className="relative z-20 border-b border-white/[0.07] bg-[#080810]/80 backdrop-blur-xl">
         <nav className="mx-auto flex max-w-7xl items-center justify-between px-6 py-5 lg:px-10">
-          <Link href="/" className="group flex items-center">
-            <span className="text-2xl font-black tracking-tight">
-              Clip<span className="text-violet-400 transition group-hover:text-fuchsia-300">TN</span>
-            </span>
-            <span className="ml-3 rounded-md border border-violet-400/20 bg-violet-400/[0.08] px-2 py-1 text-[9px] font-bold tracking-[0.2em] text-violet-300">
-              TUNISIA
-            </span>
-          </Link>
+          <Link
+  href="/"
+  className="group flex shrink-0 items-center"
+  aria-label="ClipTN homepage"
+>
+  <Image
+    src="/cliptn-logo.png"
+    alt="ClipTN"
+    width={1774}
+    height={887}
+    priority
+    className="h-14 w-auto object-contain transition duration-300 group-hover:scale-105"
+  />
+</Link>
 
           <div className="hidden items-center gap-9 text-sm text-zinc-400 md:flex">
             <a href="#campaigns" className="nav-link">Explore campaigns</a>
