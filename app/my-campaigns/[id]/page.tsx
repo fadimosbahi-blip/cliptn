@@ -104,6 +104,10 @@ function MyCampaignDetailsContent() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
+  const [submitting, setSubmitting] = useState(false);
+  const [submissionMessage, setSubmissionMessage] = useState("");
+  const [submissionError, setSubmissionError] = useState("");
+
   useEffect(() => {
     let active = true;
 
@@ -238,6 +242,67 @@ function MyCampaignDetailsContent() {
     };
   }, [campaignId, router]);
 
+  // Submit a draft campaign for admin approval.
+  async function handleSubmitForApproval() {
+    if (!campaign || campaign.status !== "draft" || submitting) {
+      return;
+    }
+
+    const confirmed = window.confirm(
+      "Submit this campaign for admin approval? You will no longer be able to edit it unless an admin returns it to draft."
+    );
+
+    if (!confirmed) return;
+
+    setSubmitting(true);
+    setSubmissionMessage("");
+    setSubmissionError("");
+
+    try {
+      const supabase = createClient();
+
+      const { data, error: submitError } = await supabase.rpc(
+        "submit_my_campaign_for_approval",
+        {
+          p_campaign_id: campaign.id,
+        }
+      );
+
+      if (submitError) {
+        throw submitError;
+      }
+
+      if (!data?.success || data.status !== "pending_approval") {
+        throw new Error(
+          "The campaign submission could not be confirmed. Please refresh and try again."
+        );
+      }
+
+      setCampaign((current) =>
+        current
+          ? {
+              ...current,
+              status: "pending_approval",
+            }
+          : current
+      );
+
+      setSubmissionMessage(
+        "Your campaign has been submitted successfully. It is now waiting for admin approval."
+      );
+    } catch (err) {
+      console.error("Campaign submission error:", err);
+
+      setSubmissionError(
+        err instanceof Error
+          ? err.message
+          : "Something went wrong while submitting your campaign."
+      );
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
   const rewardFor = (submissionId: string) =>
     rewards.find((reward) => reward.submission_id === submissionId);
 
@@ -327,7 +392,6 @@ function MyCampaignDetailsContent() {
       <div className="pointer-events-none fixed -bottom-48 -left-40 h-[450px] w-[450px] rounded-full bg-indigo-700/[0.08] blur-[120px]" />
 
       <div className="relative mx-auto max-w-6xl">
-
         {/* HEADER */}
         <header className="mb-8 flex flex-col gap-5 border-b border-white/[0.07] pb-6 sm:flex-row sm:items-center sm:justify-between">
           <div>
@@ -348,13 +412,26 @@ function MyCampaignDetailsContent() {
           </div>
 
           <div className="flex flex-wrap gap-3">
-            <Link
-              href={`/my-campaigns/${campaign.id}/edit`}
-              className="inline-flex items-center justify-center gap-2 rounded-xl bg-violet-600 px-5 py-3 text-sm font-bold transition hover:-translate-y-0.5 hover:bg-violet-500"
-            >
-              <span>✎</span>
-              Edit campaign
-            </Link>
+            {campaign.status === "draft" && (
+              <>
+                <Link
+                  href={`/my-campaigns/${campaign.id}/edit`}
+                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-violet-600 px-5 py-3 text-sm font-bold transition hover:-translate-y-0.5 hover:bg-violet-500"
+                >
+                  <span>✎</span>
+                  Edit campaign
+                </Link>
+
+                <button
+                  type="button"
+                  onClick={handleSubmitForApproval}
+                  disabled={submitting}
+                  className="inline-flex items-center justify-center gap-2 rounded-xl border border-violet-400/30 bg-violet-500/10 px-5 py-3 text-sm font-bold text-violet-200 transition hover:bg-violet-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {submitting ? "Submitting..." : "Submit for approval"}
+                </button>
+              </>
+            )}
 
             <Link
               href="/dashboard"
@@ -364,6 +441,70 @@ function MyCampaignDetailsContent() {
             </Link>
           </div>
         </header>
+
+        {/* SUBMISSION FEEDBACK */}
+        {(submissionMessage || submissionError) && (
+          <div
+            role="status"
+            className={`mb-6 rounded-2xl border p-4 text-sm leading-6 ${
+              submissionError
+                ? "border-red-400/20 bg-red-400/10 text-red-300"
+                : "border-emerald-400/20 bg-emerald-400/10 text-emerald-300"
+            }`}
+          >
+            {submissionError || submissionMessage}
+          </div>
+        )}
+
+        {/* CAMPAIGN STATUS INFORMATION */}
+        {campaign.status === "pending_approval" && (
+          <div className="mb-6 rounded-2xl border border-amber-400/20 bg-amber-400/[0.06] p-5">
+            <p className="font-bold text-amber-300">
+              Campaign awaiting approval
+            </p>
+            <p className="mt-2 text-sm leading-6 text-zinc-400">
+              Your campaign has been submitted and is waiting for an
+              administrator to review it. You cannot edit its details while
+              it is awaiting approval.
+            </p>
+          </div>
+        )}
+
+        {campaign.status === "active" && (
+          <div className="mb-6 rounded-2xl border border-emerald-400/20 bg-emerald-400/[0.06] p-5">
+            <p className="font-bold text-emerald-300">
+              Your campaign is active
+            </p>
+            <p className="mt-2 text-sm leading-6 text-zinc-400">
+              Your campaign has been approved and is visible to clippers.
+              Its details are locked while it is active.
+            </p>
+          </div>
+        )}
+
+        {campaign.status === "draft" && (
+          <div className="mb-6 rounded-2xl border border-violet-400/20 bg-violet-500/[0.05] p-5">
+            <p className="font-bold text-violet-300">
+              Campaign is a draft
+            </p>
+            <p className="mt-2 text-sm leading-6 text-zinc-400">
+              You can still edit your campaign details and financial terms.
+              When everything is ready, submit it for admin approval.
+            </p>
+          </div>
+        )}
+
+        {campaign.status === "completed" && (
+          <div className="mb-6 rounded-2xl border border-blue-400/20 bg-blue-400/[0.06] p-5">
+            <p className="font-bold text-blue-300">
+              Campaign completed
+            </p>
+            <p className="mt-2 text-sm leading-6 text-zinc-400">
+              This campaign has been completed and its details can no
+              longer be edited.
+            </p>
+          </div>
+        )}
 
         {/* CAMPAIGN HERO */}
         <section className="campaign-enter mb-6 overflow-hidden rounded-[28px] border border-white/[0.08] bg-[#14121c]">

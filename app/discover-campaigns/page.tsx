@@ -6,8 +6,18 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
+type StreamerProfile = {
+  user_id: string;
+  username: string;
+  display_name: string;
+  avatar_url: string | null;
+  platform: string;
+  is_public: boolean;
+};
+
 type Campaign = {
   id: string;
+  streamer_id: string;
   title: string;
   description: string;
   platform: string;
@@ -18,6 +28,7 @@ type Campaign = {
   starts_at: string;
   ends_at: string;
   created_at: string;
+  creator: StreamerProfile | null;
 };
 
 const platforms = ["All", "TikTok", "YouTube", "Instagram"];
@@ -49,6 +60,23 @@ function getPlatformStyle(platform: string) {
       return "border-red-400/20 bg-red-400/10 text-red-300";
     case "Instagram":
       return "border-orange-400/20 bg-orange-400/10 text-orange-300";
+    default:
+      return "border-white/10 bg-white/5 text-zinc-300";
+  }
+}
+
+function getCreatorPlatformStyle(platform: string) {
+  switch (platform.toLowerCase()) {
+    case "twitch":
+      return "border-violet-400/20 bg-violet-400/10 text-violet-300";
+    case "youtube":
+      return "border-red-400/20 bg-red-400/10 text-red-300";
+    case "tiktok":
+      return "border-pink-400/20 bg-pink-400/10 text-pink-300";
+    case "instagram":
+      return "border-orange-400/20 bg-orange-400/10 text-orange-300";
+    case "kick":
+      return "border-emerald-400/20 bg-emerald-400/10 text-emerald-300";
     default:
       return "border-white/10 bg-white/5 text-zinc-300";
   }
@@ -115,7 +143,7 @@ export default function DiscoverCampaignsPage() {
         const { data, error: campaignError } = await supabase
           .from("campaigns")
           .select(
-            "id, title, description, platform, source_url, cover_image_url, budget_total, reward_per_1000, starts_at, ends_at, created_at"
+            "id, streamer_id, title, description, platform, source_url, cover_image_url, budget_total, reward_per_1000, starts_at, ends_at, created_at"
           )
           .eq("status", "active")
           .order("created_at", { ascending: false });
@@ -127,14 +155,66 @@ export default function DiscoverCampaignsPage() {
           setError(
             "We couldn't load campaigns. Please refresh the page and try again."
           );
-        } else {
-          setCampaigns((data ?? []) as Campaign[]);
+          return;
         }
+
+        const campaignRows = data ?? [];
+
+        const streamerIds = [
+          ...new Set(
+            campaignRows
+              .map((campaign) => campaign.streamer_id)
+              .filter(Boolean)
+          ),
+        ];
+
+        let creatorProfiles: StreamerProfile[] = [];
+
+        if (streamerIds.length > 0) {
+          const { data: streamerData, error: streamerError } =
+            await supabase
+              .from("streamer_profiles")
+              .select(
+                "user_id, username, display_name, avatar_url, platform, is_public"
+              )
+              .in("user_id", streamerIds)
+              .eq("is_public", true);
+
+          if (streamerError) {
+            console.error(
+              "Creator profile loading error:",
+              streamerError
+            );
+          } else {
+            creatorProfiles = (streamerData ??
+              []) as StreamerProfile[];
+          }
+        }
+
+        if (!active) return;
+
+        const creatorMap = new Map(
+          creatorProfiles.map((creator) => [
+            creator.user_id,
+            creator,
+          ])
+        );
+
+        const campaignsWithCreators: Campaign[] =
+          campaignRows.map((campaign) => ({
+            ...(campaign as Omit<Campaign, "creator">),
+            creator:
+              creatorMap.get(campaign.streamer_id) ?? null,
+          }));
+
+        setCampaigns(campaignsWithCreators);
       } catch (err) {
         console.error("Unexpected marketplace error:", err);
 
         if (active) {
-          setError("Something went wrong while loading the marketplace.");
+          setError(
+            "Something went wrong while loading the marketplace."
+          );
         }
       } finally {
         if (active) setLoading(false);
@@ -160,18 +240,28 @@ export default function DiscoverCampaignsPage() {
         !term ||
         campaign.title.toLowerCase().includes(term) ||
         campaign.description.toLowerCase().includes(term) ||
-        campaign.platform.toLowerCase().includes(term);
+        campaign.platform.toLowerCase().includes(term) ||
+        campaign.creator?.display_name
+          .toLowerCase()
+          .includes(term) ||
+        campaign.creator?.username.toLowerCase().includes(term);
 
       return matchesPlatform && matchesSearch;
     });
 
     return [...results].sort((a, b) => {
       if (sortBy === "reward") {
-        return Number(b.reward_per_1000) - Number(a.reward_per_1000);
+        return (
+          Number(b.reward_per_1000) -
+          Number(a.reward_per_1000)
+        );
       }
 
       if (sortBy === "budget") {
-        return Number(b.budget_total) - Number(a.budget_total);
+        return (
+          Number(b.budget_total) -
+          Number(a.budget_total)
+        );
       }
 
       return (
@@ -184,9 +274,15 @@ export default function DiscoverCampaignsPage() {
   const platformCounts = useMemo(() => {
     return {
       All: campaigns.length,
-      TikTok: campaigns.filter((c) => c.platform === "TikTok").length,
-      YouTube: campaigns.filter((c) => c.platform === "YouTube").length,
-      Instagram: campaigns.filter((c) => c.platform === "Instagram").length,
+      TikTok: campaigns.filter(
+        (campaign) => campaign.platform === "TikTok"
+      ).length,
+      YouTube: campaigns.filter(
+        (campaign) => campaign.platform === "YouTube"
+      ).length,
+      Instagram: campaigns.filter(
+        (campaign) => campaign.platform === "Instagram"
+      ).length,
     };
   }, [campaigns]);
 
@@ -207,13 +303,27 @@ export default function DiscoverCampaignsPage() {
     <main className="relative min-h-screen overflow-hidden bg-[#080810] px-5 py-7 text-white sm:px-8 lg:px-12">
       <style>{`
         @keyframes marketplaceGlow {
-          0%, 100% { opacity: .2; transform: scale(1); }
-          50% { opacity: .45; transform: scale(1.12); }
+          0%, 100% {
+            opacity: .2;
+            transform: scale(1);
+          }
+
+          50% {
+            opacity: .45;
+            transform: scale(1.12);
+          }
         }
 
         @keyframes marketplaceEnter {
-          from { opacity: 0; transform: translateY(12px); }
-          to { opacity: 1; transform: translateY(0); }
+          from {
+            opacity: 0;
+            transform: translateY(12px);
+          }
+
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
         }
 
         .marketplace-glow {
@@ -224,8 +334,13 @@ export default function DiscoverCampaignsPage() {
           animation: marketplaceEnter .55s ease-out both;
         }
 
-        .marketplace-delay-1 { animation-delay: .08s; }
-        .marketplace-delay-2 { animation-delay: .16s; }
+        .marketplace-delay-1 {
+          animation-delay: .08s;
+        }
+
+        .marketplace-delay-2 {
+          animation-delay: .16s;
+        }
 
         @media (prefers-reduced-motion: reduce) {
           *, *::before, *::after {
@@ -270,8 +385,9 @@ export default function DiscoverCampaignsPage() {
               </h1>
 
               <p className="mt-4 max-w-2xl text-sm leading-6 text-zinc-400">
-                Discover creator campaigns, choose content that matches your
-                style and turn your editing skills into opportunities.
+                Discover creator campaigns, choose content that
+                matches your style and turn your editing skills
+                into opportunities.
               </p>
             </div>
 
@@ -326,8 +442,10 @@ export default function DiscoverCampaignsPage() {
               <input
                 type="search"
                 value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                placeholder="Search by campaign name, description or platform..."
+                onChange={(event) =>
+                  setSearch(event.target.value)
+                }
+                placeholder="Search campaigns or creators..."
                 className="w-full rounded-xl border border-white/[0.08] bg-[#14121c] py-4 pl-12 pr-4 text-sm text-white outline-none transition placeholder:text-zinc-600 focus:border-violet-400/40 focus:ring-2 focus:ring-violet-500/10"
               />
             </div>
@@ -339,7 +457,9 @@ export default function DiscoverCampaignsPage() {
 
               <select
                 value={sortBy}
-                onChange={(event) => setSortBy(event.target.value)}
+                onChange={(event) =>
+                  setSortBy(event.target.value)
+                }
                 className="min-w-0 flex-1 bg-transparent py-4 text-xs font-semibold text-zinc-200 outline-none"
               >
                 <option value="newest" className="bg-[#14121c]">
@@ -362,13 +482,16 @@ export default function DiscoverCampaignsPage() {
             </span>
 
             {platforms.map((platform) => {
-              const selected = selectedPlatform === platform;
+              const selected =
+                selectedPlatform === platform;
 
               return (
                 <button
                   key={platform}
                   type="button"
-                  onClick={() => setSelectedPlatform(platform)}
+                  onClick={() =>
+                    setSelectedPlatform(platform)
+                  }
                   className={`flex items-center gap-2 rounded-xl border px-3.5 py-2.5 text-[11px] font-semibold transition ${
                     selected
                       ? "border-violet-400/30 bg-violet-500/15 text-violet-200"
@@ -376,6 +499,7 @@ export default function DiscoverCampaignsPage() {
                   }`}
                 >
                   {platform}
+
                   <span
                     className={`rounded-md px-1.5 py-0.5 text-[9px] ${
                       selected
@@ -383,7 +507,11 @@ export default function DiscoverCampaignsPage() {
                         : "bg-white/[0.05] text-zinc-500"
                     }`}
                   >
-                    {platformCounts[platform as keyof typeof platformCounts]}
+                    {
+                      platformCounts[
+                        platform as keyof typeof platformCounts
+                      ]
+                    }
                   </span>
                 </button>
               );
@@ -456,12 +584,15 @@ export default function DiscoverCampaignsPage() {
                     <>
                       <div className="marketplace-glow absolute -right-10 -top-20 h-64 w-64 rounded-full bg-violet-500/25 blur-3xl" />
                       <div className="absolute -bottom-24 -left-12 h-56 w-56 rounded-full bg-indigo-500/20 blur-3xl" />
+
                       <div className="absolute inset-0 flex items-center justify-center">
                         <span className="text-7xl font-black text-white/15">
                           {getPlatformSymbol(campaign.platform)}
                         </span>
                       </div>
+
                       <div className="absolute inset-0 bg-gradient-to-t from-[#14121c] via-transparent to-black/10" />
+
                       <span className="absolute bottom-4 left-5 text-[9px] font-bold uppercase tracking-[0.2em] text-white/50">
                         ClipTN opportunity
                       </span>
@@ -470,7 +601,9 @@ export default function DiscoverCampaignsPage() {
 
                   <div className="absolute left-4 top-4">
                     <span
-                      className={`rounded-full border px-3 py-1.5 text-[9px] font-bold backdrop-blur-md ${getPlatformStyle(campaign.platform)}`}
+                      className={`rounded-full border px-3 py-1.5 text-[9px] font-bold backdrop-blur-md ${getPlatformStyle(
+                        campaign.platform
+                      )}`}
                     >
                       {campaign.platform}
                     </span>
@@ -484,8 +617,66 @@ export default function DiscoverCampaignsPage() {
 
                 {/* CAMPAIGN DETAILS */}
                 <div className="flex flex-1 flex-col p-5">
+                  {/* CREATOR PROFILE */}
+                  <div className="mb-5 flex items-center justify-between gap-3">
+                    <div className="flex min-w-0 items-center gap-3">
+                      {campaign.creator?.avatar_url ? (
+                        <img
+                          src={campaign.creator.avatar_url}
+                          alt={`${campaign.creator.display_name} profile`}
+                          className="h-11 w-11 shrink-0 rounded-full border border-violet-400/20 object-cover"
+                        />
+                      ) : (
+                        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-violet-400/20 bg-gradient-to-br from-violet-500/20 to-indigo-500/20 text-lg font-black text-violet-200">
+                          {(campaign.creator?.display_name || "C")
+                            .charAt(0)
+                            .toUpperCase()}
+                        </div>
+                      )}
+
+                      <div className="min-w-0">
+                        <p className="text-[9px] font-bold uppercase tracking-[0.15em] text-zinc-600">
+                          Published by
+                        </p>
+
+                        {campaign.creator?.username ? (
+                          <Link
+                            href={`/streamer/${campaign.creator.username}`}
+                            className="mt-1 block truncate text-sm font-bold text-white transition hover:text-violet-300"
+                          >
+                            {campaign.creator.display_name}
+                          </Link>
+                        ) : (
+                          <p className="mt-1 truncate text-sm font-bold text-white">
+                            {campaign.creator?.display_name ||
+                              "ClipTN Creator"}
+                          </p>
+                        )}
+
+                        {campaign.creator?.username && (
+                          <p className="mt-0.5 truncate text-[10px] text-zinc-500">
+                            @{campaign.creator.username}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+
+                    {campaign.creator?.platform && (
+                      <span
+                        className={`shrink-0 rounded-lg border px-2.5 py-1.5 text-[9px] font-bold ${getCreatorPlatformStyle(
+                          campaign.creator.platform
+                        )}`}
+                      >
+                        {campaign.creator.platform}
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="mb-5 border-t border-white/[0.06]" />
+
+                  {/* TITLE */}
                   <div className="flex items-start justify-between gap-3">
-                    <h3 className="break-words text-lg font-bold leading-6 transition group-hover:text-violet-200">
+                    <h3 className="break-words text-xl font-extrabold leading-7 tracking-tight transition group-hover:text-violet-200">
                       {campaign.title}
                     </h3>
                   </div>
@@ -494,7 +685,7 @@ export default function DiscoverCampaignsPage() {
                     {campaign.description}
                   </p>
 
-                  {/* REWARD HIGHLIGHT */}
+                  {/* REWARD */}
                   <div className="mt-5 rounded-xl border border-violet-400/15 bg-gradient-to-r from-violet-500/[0.10] to-indigo-500/[0.06] p-4">
                     <p className="text-[9px] font-bold uppercase tracking-[0.15em] text-violet-300/70">
                       Reward per 1,000 qualified views
@@ -502,8 +693,11 @@ export default function DiscoverCampaignsPage() {
 
                     <div className="mt-2 flex items-baseline gap-2">
                       <span className="text-2xl font-black tabular-nums text-violet-200">
-                        {formatMoney(campaign.reward_per_1000)}
+                        {formatMoney(
+                          campaign.reward_per_1000
+                        )}
                       </span>
+
                       <span className="text-xs font-semibold text-zinc-400">
                         TND
                       </span>
@@ -515,6 +709,7 @@ export default function DiscoverCampaignsPage() {
                     <span className="text-[10px] text-zinc-500">
                       Campaign budget
                     </span>
+
                     <span className="text-sm font-bold tabular-nums text-white">
                       {formatMoney(campaign.budget_total)}{" "}
                       <span className="text-[10px] font-medium text-zinc-500">

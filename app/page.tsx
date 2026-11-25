@@ -1,4 +1,3 @@
-
 import Link from "next/link";
 import Image from "next/image";
 
@@ -58,8 +57,63 @@ const steps = [
 
 export default function Home() {
   return (
-    <main className="min-h-screen overflow-hidden bg-[#080810] text-white">
+    <main className="relative isolate min-h-screen overflow-hidden bg-[#080810] text-white">
+      {/* Subtle animated page-wide atmosphere */}
+      <div aria-hidden="true" className="pointer-events-none absolute inset-0 z-0 overflow-hidden">
+        <div className="page-ambient-orb page-ambient-orb-one absolute -left-48 top-[8%] h-[520px] w-[520px] rounded-full bg-violet-700/[0.10] blur-[140px]" />
+        <div className="page-ambient-orb page-ambient-orb-two absolute -right-56 top-[30%] h-[600px] w-[600px] rounded-full bg-blue-600/[0.08] blur-[160px]" />
+        <div className="page-ambient-orb page-ambient-orb-three absolute left-[28%] top-[68%] h-[460px] w-[460px] rounded-full bg-fuchsia-600/[0.06] blur-[150px]" />
+        <div className="page-particles absolute inset-0 opacity-35" />
+        <div className="page-grid absolute inset-0 opacity-30" />
+      </div>
+
+      <div className="relative z-10">
       <style>{`
+        @keyframes ambientDriftOne {
+          0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+          50% { transform: translate3d(34px, 24px, 0) scale(1.06); }
+        }
+
+        @keyframes ambientDriftTwo {
+          0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+          50% { transform: translate3d(-30px, 28px, 0) scale(1.08); }
+        }
+
+        @keyframes particleDrift {
+          0% { background-position: 0 0, 35px 55px, 90px 20px; }
+          50% { background-position: 18px -22px, 12px 78px, 115px -5px; }
+          100% { background-position: 0 0, 35px 55px, 90px 20px; }
+        }
+
+        .page-ambient-orb-one {
+          animation: ambientDriftOne 24s ease-in-out infinite;
+        }
+
+        .page-ambient-orb-two {
+          animation: ambientDriftTwo 29s ease-in-out infinite;
+        }
+
+        .page-ambient-orb-three {
+          animation: ambientDriftOne 32s ease-in-out infinite reverse;
+        }
+
+        .page-particles {
+          background-image:
+            radial-gradient(circle, rgba(196,181,253,.42) 1px, transparent 1.7px),
+            radial-gradient(circle, rgba(129,140,248,.30) 1px, transparent 1.8px),
+            radial-gradient(circle, rgba(217,70,239,.24) 1px, transparent 1.8px);
+          background-size: 150px 150px, 210px 210px, 270px 270px;
+          animation: particleDrift 42s ease-in-out infinite;
+        }
+
+        .page-grid {
+          background-image:
+            linear-gradient(rgba(167,139,250,.035) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(167,139,250,.035) 1px, transparent 1px);
+          background-size: 76px 76px;
+          mask-image: linear-gradient(to bottom, black, transparent 85%);
+        }
+
         @keyframes float {
           0%, 100% { transform: translateY(0px) rotate(0deg); }
           50% { transform: translateY(-13px) rotate(1deg); }
@@ -208,19 +262,19 @@ export default function Home() {
       <header className="relative z-20 border-b border-white/[0.07] bg-[#080810]/80 backdrop-blur-xl">
         <nav className="mx-auto flex max-w-7xl items-center justify-between px-6 py-5 lg:px-10">
           <Link
-  href="/"
-  className="group flex shrink-0 items-center"
-  aria-label="ClipTN homepage"
->
-  <Image
-    src="/cliptn-logo.png"
-    alt="ClipTN"
-    width={1774}
-    height={887}
-    priority
-    className="h-14 w-auto object-contain transition duration-300 group-hover:scale-105"
-  />
-</Link>
+            href="/"
+            className="group flex shrink-0 items-center"
+            aria-label="ClipTN homepage"
+          >
+            <Image
+              src="/cliptn-logo.png"
+              alt="ClipTN"
+              width={1774}
+              height={887}
+              priority
+              className="h-14 w-auto object-contain transition duration-300 group-hover:scale-105"
+            />
+          </Link>
 
           <div className="hidden items-center gap-9 text-sm text-zinc-400 md:flex">
             <a href="#campaigns" className="nav-link">Explore campaigns</a>
@@ -384,7 +438,7 @@ export default function Home() {
                   <p className="mt-1 text-[10px] text-zinc-500">Made for creators and clippers</p>
                 </div>
               </div>
-            </div>
+                          </div>
 
             <div className="ambient-glow absolute right-[8%] top-[8%] h-3 w-3 rounded-full bg-fuchsia-300 blur-[2px]" />
             <div className="ambient-glow absolute bottom-[12%] left-[8%] h-2 w-2 rounded-full bg-violet-300 blur-[1px]" />
@@ -576,6 +630,7 @@ export default function Home() {
           <p>© 2026 ClipTN. All rights reserved.</p>
         </div>
       </footer>
+      </div>
     </main>
   );
 }
