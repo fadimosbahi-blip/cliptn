@@ -13,6 +13,10 @@ type Campaign = {
   description: string;
   source_url: string;
   rights_confirmed: boolean;
+  budget_total: number | string;
+  reward_per_1000: number | string;
+  max_reward_per_clipper: number | string | null;
+  status: string;
 };
 
 function EditCampaignContent() {
@@ -21,16 +25,23 @@ function EditCampaignContent() {
   const campaignId = params.id as string;
 
   const [campaign, setCampaign] = useState<Campaign | null>(null);
+
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [sourceUrl, setSourceUrl] = useState("");
   const [rightsConfirmed, setRightsConfirmed] = useState(false);
+
+  const [budgetTotal, setBudgetTotal] = useState("");
+  const [rewardPer1000, setRewardPer1000] = useState("");
+  const [maxRewardPerClipper, setMaxRewardPerClipper] = useState("");
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [currentYear, setCurrentYear] = useState<number | null>(null);
+
+  const isDraft = campaign?.status === "draft";
 
   useEffect(() => {
     setCurrentYear(new Date().getFullYear());
@@ -64,7 +75,9 @@ function EditCampaignContent() {
 
         const { data, error: campaignError } = await supabase
           .from("campaigns")
-          .select("id, title, description, source_url, rights_confirmed")
+          .select(
+            "id, title, description, source_url, rights_confirmed, budget_total, reward_per_1000, max_reward_per_clipper, status"
+          )
           .eq("id", campaignId)
           .eq("streamer_id", authData.user.id)
           .maybeSingle();
@@ -85,6 +98,13 @@ function EditCampaignContent() {
         setDescription(loaded.description);
         setSourceUrl(loaded.source_url);
         setRightsConfirmed(loaded.rights_confirmed);
+        setBudgetTotal(String(loaded.budget_total));
+        setRewardPer1000(String(loaded.reward_per_1000));
+        setMaxRewardPerClipper(
+          loaded.max_reward_per_clipper == null
+            ? ""
+            : String(loaded.max_reward_per_clipper)
+        );
       } catch (err) {
         console.error("Campaign loading error:", err);
         if (active) {
@@ -109,6 +129,11 @@ function EditCampaignContent() {
 
     if (!campaign) return;
 
+    if (!isDraft) {
+      setError("Only draft campaigns can be edited.");
+      return;
+    }
+
     if (title.trim().length < 3 || title.trim().length > 100) {
       setError("The title must contain between 3 and 100 characters.");
       return;
@@ -118,21 +143,42 @@ function EditCampaignContent() {
       description.trim().length < 10 ||
       description.trim().length > 3000
     ) {
-      setError(
-        "The description must contain between 10 and 3,000 characters."
-      );
+      setError("The description must contain between 10 and 3,000 characters.");
       return;
     }
 
-    try {
-      const parsedUrl = new URL(sourceUrl.trim());
+    let parsedUrl: URL;
 
+    try {
+      parsedUrl = new URL(sourceUrl.trim());
       if (!["http:", "https:"].includes(parsedUrl.protocol)) {
         setError("Please enter a valid source URL.");
         return;
       }
     } catch {
       setError("Please enter a valid source URL.");
+      return;
+    }
+
+    const budget = Number(budgetTotal);
+    const rate = Number(rewardPer1000);
+    const cap =
+      maxRewardPerClipper.trim() === ""
+        ? null
+        : Number(maxRewardPerClipper);
+
+    if (!Number.isFinite(budget) || budget <= 0) {
+      setError("Campaign budget must be greater than zero.");
+      return;
+    }
+
+    if (!Number.isFinite(rate) || rate <= 0) {
+      setError("Reward per 1,000 views must be greater than zero.");
+      return;
+    }
+
+    if (cap !== null && (!Number.isFinite(cap) || cap <= 0)) {
+      setError("Maximum reward must be greater than zero, or left empty.");
       return;
     }
 
@@ -164,6 +210,9 @@ function EditCampaignContent() {
           p_description: description.trim(),
           p_source_url: sourceUrl.trim(),
           p_rights_confirmed: rightsConfirmed,
+          p_budget_total: budget,
+          p_reward_per_1000: rate,
+          p_max_reward_per_clipper: cap,
         }
       );
 
@@ -173,7 +222,7 @@ function EditCampaignContent() {
         return;
       }
 
-      setSuccess("Your campaign has been updated successfully!");
+      setSuccess("Your draft campaign has been updated successfully!");
 
       setCampaign({
         ...campaign,
@@ -181,6 +230,9 @@ function EditCampaignContent() {
         description: description.trim(),
         source_url: sourceUrl.trim(),
         rights_confirmed: rightsConfirmed,
+        budget_total: budget,
+        reward_per_1000: rate,
+        max_reward_per_clipper: cap,
       });
     } catch (err) {
       console.error("Campaign update error:", err);
@@ -221,6 +273,8 @@ function EditCampaignContent() {
 
   if (!campaign) return null;
 
+  const locked = !isDraft;
+
   return (
     <main className="relative min-h-screen overflow-hidden bg-[#080810] px-5 py-8 text-white sm:px-8 lg:px-12">
       <div className="pointer-events-none fixed -right-40 -top-40 h-[500px] w-[500px] rounded-full bg-violet-700/10 blur-[120px]" />
@@ -242,7 +296,9 @@ function EditCampaignContent() {
               Edit campaign<span className="text-violet-400">.</span>
             </h1>
             <p className="mt-3 text-sm text-zinc-400">
-              Update your campaign information without changing its financial settings.
+              {isDraft
+                ? "Edit your campaign details and financial terms before submitting it for approval."
+                : "This campaign is locked because it is no longer a draft."}
             </p>
           </div>
 
@@ -250,6 +306,24 @@ function EditCampaignContent() {
             ✎
           </div>
         </header>
+
+        {locked && (
+          <section className="mb-6 rounded-2xl border border-amber-400/20 bg-amber-400/[0.06] p-5">
+            <div className="flex items-start gap-3">
+              <span className="text-lg text-amber-300">🔒</span>
+              <div>
+                <h2 className="text-sm font-bold text-white">
+                  Campaign terms are locked
+                </h2>
+                <p className="mt-2 text-xs leading-6 text-zinc-400">
+                  This campaign is {campaign.status.replaceAll("_", " ")}.
+                  Campaign details and financial settings cannot be changed
+                  unless an authorized admin returns it to draft.
+                </p>
+              </div>
+            </div>
+          </section>
+        )}
 
         <form onSubmit={handleSave} className="space-y-6">
           <section className="rounded-3xl border border-white/[0.08] bg-[#14121c] p-6 sm:p-8">
@@ -262,10 +336,7 @@ function EditCampaignContent() {
 
             <div className="space-y-6">
               <div>
-                <label
-                  htmlFor="title"
-                  className="mb-2 block text-xs font-semibold text-zinc-300"
-                >
+                <label htmlFor="title" className="mb-2 block text-xs font-semibold text-zinc-300">
                   Campaign title
                 </label>
                 <input
@@ -275,8 +346,8 @@ function EditCampaignContent() {
                   minLength={3}
                   maxLength={100}
                   required
-                  className="w-full rounded-xl border border-white/[0.08] bg-[#0b0a12] px-4 py-4 text-sm text-white outline-none transition focus:border-violet-400/60 focus:ring-2 focus:ring-violet-500/10"
-                  placeholder="Enter your campaign title"
+                  disabled={locked}
+                  className="w-full rounded-xl border border-white/[0.08] bg-[#0b0a12] px-4 py-4 text-sm text-white outline-none transition focus:border-violet-400/60 disabled:opacity-60"
                 />
                 <p className="mt-2 text-right text-[10px] text-zinc-600">
                   {title.length}/100
@@ -284,10 +355,7 @@ function EditCampaignContent() {
               </div>
 
               <div>
-                <label
-                  htmlFor="description"
-                  className="mb-2 block text-xs font-semibold text-zinc-300"
-                >
+                <label htmlFor="description" className="mb-2 block text-xs font-semibold text-zinc-300">
                   Campaign description
                 </label>
                 <textarea
@@ -298,8 +366,8 @@ function EditCampaignContent() {
                   maxLength={3000}
                   rows={7}
                   required
-                  className="w-full resize-y rounded-xl border border-white/[0.08] bg-[#0b0a12] px-4 py-4 text-sm leading-7 text-white outline-none transition focus:border-violet-400/60 focus:ring-2 focus:ring-violet-500/10"
-                  placeholder="Explain the campaign requirements..."
+                  disabled={locked}
+                  className="w-full resize-y rounded-xl border border-white/[0.08] bg-[#0b0a12] px-4 py-4 text-sm leading-7 text-white outline-none transition focus:border-violet-400/60 disabled:opacity-60"
                 />
                 <p className="mt-2 text-right text-[10px] text-zinc-600">
                   {description.length}/3000
@@ -307,10 +375,7 @@ function EditCampaignContent() {
               </div>
 
               <div>
-                <label
-                  htmlFor="sourceUrl"
-                  className="mb-2 block text-xs font-semibold text-zinc-300"
-                >
+                <label htmlFor="sourceUrl" className="mb-2 block text-xs font-semibold text-zinc-300">
                   Original content URL
                 </label>
                 <input
@@ -319,11 +384,75 @@ function EditCampaignContent() {
                   value={sourceUrl}
                   onChange={(e) => setSourceUrl(e.target.value)}
                   required
-                  className="w-full rounded-xl border border-white/[0.08] bg-[#0b0a12] px-4 py-4 text-sm text-white outline-none transition focus:border-violet-400/60 focus:ring-2 focus:ring-violet-500/10"
+                  disabled={locked}
+                  className="w-full rounded-xl border border-white/[0.08] bg-[#0b0a12] px-4 py-4 text-sm text-white outline-none transition focus:border-violet-400/60 disabled:opacity-60"
                   placeholder="https://..."
                 />
+              </div>
+            </div>
+          </section>
+
+          <section className="rounded-3xl border border-white/[0.08] bg-[#14121c] p-6 sm:p-8">
+            <div className="mb-7">
+              <h2 className="text-lg font-bold">Financial settings</h2>
+              <p className="mt-2 text-xs leading-6 text-zinc-500">
+                These values define the campaign's reward terms. They can only
+                be changed while the campaign is a draft. Currency: TND.
+              </p>
+            </div>
+
+            <div className="grid gap-6 sm:grid-cols-2">
+              <div>
+                <label htmlFor="budgetTotal" className="mb-2 block text-xs font-semibold text-zinc-300">
+                  Total campaign budget (TND)
+                </label>
+                <input
+                  id="budgetTotal"
+                  type="number"
+                  min="0.01"
+                  step="0.01"
+                  value={budgetTotal}
+                  onChange={(e) => setBudgetTotal(e.target.value)}
+                  required
+                  disabled={locked}
+                  className="w-full rounded-xl border border-white/[0.08] bg-[#0b0a12] px-4 py-4 text-sm text-white outline-none focus:border-violet-400/60 disabled:opacity-60"
+                />
+              </div>
+
+              <div>
+                <label htmlFor="rewardPer1000" className="mb-2 block text-xs font-semibold text-zinc-300">
+                  Reward per 1,000 views (TND)
+                </label>
+                <input
+                  id="rewardPer1000"
+                  type="number"
+                  min="0.01"
+                  step="0.01"
+                  value={rewardPer1000}
+                  onChange={(e) => setRewardPer1000(e.target.value)}
+                  required
+                  disabled={locked}
+                  className="w-full rounded-xl border border-white/[0.08] bg-[#0b0a12] px-4 py-4 text-sm text-white outline-none focus:border-violet-400/60 disabled:opacity-60"
+                />
+              </div>
+
+              <div className="sm:col-span-2">
+                <label htmlFor="maxReward" className="mb-2 block text-xs font-semibold text-zinc-300">
+                  Maximum reward per clipper (TND)
+                </label>
+                <input
+                  id="maxReward"
+                  type="number"
+                  min="0.01"
+                  step="0.01"
+                  value={maxRewardPerClipper}
+                  onChange={(e) => setMaxRewardPerClipper(e.target.value)}
+                  disabled={locked}
+                  className="w-full rounded-xl border border-white/[0.08] bg-[#0b0a12] px-4 py-4 text-sm text-white outline-none focus:border-violet-400/60 disabled:opacity-60"
+                  placeholder="Leave empty for no individual cap"
+                />
                 <p className="mt-2 text-xs text-zinc-600">
-                  This is the source material clippers use to create their videos.
+                  Optional. Leave empty if you do not want a per-clipper cap.
                 </p>
               </div>
             </div>
@@ -332,50 +461,33 @@ function EditCampaignContent() {
           <section className="rounded-3xl border border-white/[0.08] bg-[#14121c] p-6 sm:p-8">
             <h2 className="text-lg font-bold">Content permissions</h2>
             <p className="mt-2 text-xs leading-6 text-zinc-500">
-              Confirm that you have the necessary rights or authorization to let clippers use this source content.
+              Confirm that you have the necessary rights or authorization to
+              let clippers use this source content.
             </p>
 
-            <label className="mt-6 flex cursor-pointer items-start gap-3 rounded-2xl border border-white/[0.08] bg-[#0b0a12] p-5 transition hover:border-violet-400/30">
+            <label className={`mt-6 flex items-start gap-3 rounded-2xl border border-white/[0.08] bg-[#0b0a12] p-5 ${locked ? "opacity-60" : "cursor-pointer hover:border-violet-400/30"}`}>
               <input
                 type="checkbox"
                 checked={rightsConfirmed}
                 onChange={(e) => setRightsConfirmed(e.target.checked)}
+                disabled={locked}
                 className="mt-1 h-4 w-4 accent-violet-500"
               />
               <span className="text-sm leading-6 text-zinc-300">
-                I confirm that I have permission to use and authorize the use of the source content for this campaign.
+                I confirm that I have permission to use and authorize the use
+                of the source content for this campaign.
               </span>
             </label>
           </section>
 
-          <section className="rounded-2xl border border-violet-400/15 bg-violet-500/[0.05] p-5">
-            <div className="flex items-start gap-3">
-              <span className="text-lg text-violet-300">🔒</span>
-              <div>
-                <h3 className="text-sm font-bold text-white">
-                  Financial settings protected
-                </h3>
-                <p className="mt-2 text-xs leading-6 text-zinc-400">
-                  Your campaign budget, reward rate, maximum clipper reward, platform, dates and status are not changed by this editor. Existing submissions and reward records remain untouched.
-                </p>
-              </div>
-            </div>
-          </section>
-
           {error && (
-            <div
-              role="alert"
-              className="rounded-xl border border-red-400/20 bg-red-400/10 p-4 text-sm text-red-300"
-            >
+            <div role="alert" className="rounded-xl border border-red-400/20 bg-red-400/10 p-4 text-sm text-red-300">
               {error}
             </div>
           )}
 
           {success && (
-            <div
-              role="status"
-              className="rounded-xl border border-emerald-400/20 bg-emerald-400/10 p-4 text-sm text-emerald-300"
-            >
+            <div role="status" className="rounded-xl border border-emerald-400/20 bg-emerald-400/10 p-4 text-sm text-emerald-300">
               {success}
             </div>
           )}
@@ -385,16 +497,18 @@ function EditCampaignContent() {
               href={`/my-campaigns/${campaign.id}`}
               className="inline-flex items-center justify-center rounded-xl border border-white/10 bg-white/[0.03] px-6 py-4 text-sm font-semibold text-zinc-300 transition hover:bg-white/[0.07] hover:text-white"
             >
-              Cancel
+              Back to campaign
             </Link>
 
-            <button
-              type="submit"
-              disabled={saving}
-              className="inline-flex items-center justify-center rounded-xl bg-violet-600 px-7 py-4 text-sm font-bold text-white shadow-lg shadow-violet-950/20 transition hover:-translate-y-0.5 hover:bg-violet-500 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {saving ? "Saving changes..." : "Save changes →"}
-            </button>
+            {isDraft && (
+              <button
+                type="submit"
+                disabled={saving}
+                className="inline-flex items-center justify-center rounded-xl bg-violet-600 px-7 py-4 text-sm font-bold text-white shadow-lg shadow-violet-950/20 transition hover:-translate-y-0.5 hover:bg-violet-500 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {saving ? "Saving changes..." : "Save draft changes →"}
+              </button>
+            )}
           </div>
         </form>
 
